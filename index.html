@@ -53,6 +53,7 @@
   #send-btn{padding:7px 16px;border-radius:10px;border:none;cursor:pointer;font-size:13px;font-weight:600;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;flex-shrink:0}
   #send-btn:disabled{background:#334155;color:#64748b;cursor:not-allowed}
   #footer-note{font-size:11px;color:#475569;margin-top:6px;text-align:center}
+  #api-banner{background:#1e3a5f;border:1px solid #2563eb;border-radius:8px;padding:10px 14px;margin:12px 20px;font-size:12px;color:#93c5fd;display:none}
 </style>
 </head>
 <body>
@@ -66,10 +67,10 @@
   <div id="model-box">
     <label>Model</label>
     <select id="model-select">
-      <option>Claude Sonnet 4</option>
-      <option>DeepSeek (via Claude)</option>
-      <option>GPT-style (via Claude)</option>
-      <option>Nano-style (via Claude)</option>
+      <option value="llama3-70b-8192">Llama 3 70B (Free)</option>
+      <option value="llama3-8b-8192">Llama 3 8B (Fast)</option>
+      <option value="mixtral-8x7b-32768">Mixtral 8x7B (Free)</option>
+      <option value="gemma2-9b-it">Gemma 2 9B (Free)</option>
     </select>
   </div>
 </div>
@@ -83,17 +84,23 @@
       <button class="action-btn" onclick="clearChat()">🗑 Clear</button>
     </div>
   </div>
+  <div id="api-banner">⚠️ API Error — check your Groq key in the code.</div>
   <div id="messages"></div>
   <div id="input-area">
     <div id="input-box">
-      <textarea id="user-input" rows="1" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
+      <textarea id="user-input" rows="1" placeholder="Type your message... (Enter to send)"></textarea>
       <button id="send-btn" onclick="sendMessage()">Send ➤</button>
     </div>
-    <div id="footer-note">Free · Unlimited · Powered by Claude AI</div>
+    <div id="footer-note">Free · Unlimited · Powered by Groq AI (Llama 3)</div>
   </div>
 </div>
 
 <script>
+// ============================================================
+// 🔑 PASTE YOUR GROQ API KEY BELOW (get free at console.groq.com)
+const GROQ_API_KEY = "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";
+// ============================================================
+
 const TABS = [
   {id:"chat", label:"AI Chat", icon:"💬"},
   {id:"image", label:"Image AI", icon:"🎨"},
@@ -137,7 +144,6 @@ function init() {
     tabList.appendChild(btn);
   });
   renderMessages();
-
   const inp = document.getElementById("user-input");
   inp.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
@@ -151,8 +157,7 @@ function init() {
 function switchTab(id) {
   currentTab = id;
   TABS.forEach(t => {
-    const btn = document.getElementById("tab-" + t.id);
-    btn.className = "tab-btn" + (t.id === id ? " active" : "");
+    document.getElementById("tab-" + t.id).className = "tab-btn" + (t.id === id ? " active" : "");
   });
   const t = TABS.find(x => x.id === id);
   document.getElementById("topbar-title").textContent = t.icon + " " + t.label;
@@ -176,7 +181,7 @@ function renderMessages() {
     container.innerHTML = `<div class="empty-state">
       <div class="empty-icon">${t.icon}</div>
       <div class="empty-title">${t.label}</div>
-      <div class="empty-sub">Powered by Claude AI · Free & Unlimited</div>
+      <div class="empty-sub">Powered by Groq AI · Free & Unlimited</div>
       <div class="quick-grid">${qp}</div>
     </div>`;
     return;
@@ -201,8 +206,7 @@ function renderMessages() {
       cb.onclick = () => { navigator.clipboard.writeText(m.content); cb.textContent = "✓ Copied"; setTimeout(() => cb.textContent = "Copy", 1500); };
       bub.appendChild(cb);
     }
-    row.appendChild(av);
-    row.appendChild(bub);
+    row.appendChild(av); row.appendChild(bub);
     container.appendChild(row);
   });
   if (loading) {
@@ -228,33 +232,41 @@ async function sendMessage(text) {
   const inp = document.getElementById("user-input");
   const msg = text || inp.value.trim();
   if (!msg || loading) return;
+  if (GROQ_API_KEY === "PASTE_YOUR_GROQ_KEY_HERE") {
+    alert("⚠️ Please add your Groq API key!\n\nGet it free at console.groq.com\nThen paste it in the index.html file where it says PASTE_YOUR_GROQ_KEY_HERE");
+    return;
+  }
   inp.value = ""; inp.style.height = "auto";
   loading = true;
   document.getElementById("send-btn").disabled = true;
-  histories[currentTab].push({ role:"user", content:msg });
+  document.getElementById("api-banner").style.display = "none";
+  histories[currentTab].push({role:"user", content:msg});
   renderMessages();
   try {
-    const msgs = histories[currentTab].map(m => ({ role:m.role, content:m.content }));
+    const model = document.getElementById("model-select").value;
+    const msgs = histories[currentTab].map(m => ({role:m.role, content:m.content}));
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-  method:"POST",
-  headers:{
-    "Content-Type":"application/json",
-    "Authorization":"Bearer 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"
-  },
-  body:JSON.stringify({
-    model:"llama3-70b-8192",
-    max_tokens:1500,
-    messages:[
-      {role:"system", content:SYSTEM_PROMPTS[currentTab]},
-      ...msgs
-    ]
-  })
-});
-const data = await res.json();
-const reply = data.choices?.[0]?.message?.content || "Sorry, could not get a response.";
-    histories[currentTab].push({ role:"assistant", content:reply });
-  } catch {
-    histories[currentTab].push({ role:"assistant", content:"⚠️ Error connecting to AI. Please check your internet connection." });
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":"Bearer " + GROQ_API_KEY
+      },
+      body:JSON.stringify({
+        model: model,
+        max_tokens: 1500,
+        messages:[
+          {role:"system", content:SYSTEM_PROMPTS[currentTab]},
+          ...msgs
+        ]
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+    const reply = data.choices?.[0]?.message?.content || "Sorry, could not get a response.";
+    histories[currentTab].push({role:"assistant", content:reply});
+  } catch(e) {
+    histories[currentTab].push({role:"assistant", content:"⚠️ Error: " + (e.message || "Check your Groq API key.")});
+    document.getElementById("api-banner").style.display = "block";
   }
   loading = false;
   document.getElementById("send-btn").disabled = false;
@@ -273,9 +285,7 @@ function exportChat() {
   if (!text) return alert("Nothing to export yet!");
   const blob = new Blob([text], {type:"text/plain"});
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = currentTab + "-chat.txt";
-  a.click();
+  a.href = URL.createObjectURL(blob); a.download = currentTab + "-chat.txt"; a.click();
 }
 
 init();
